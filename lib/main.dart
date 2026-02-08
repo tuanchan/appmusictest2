@@ -7,6 +7,7 @@ import 'app/settings_controller.dart';
 import 'app/playback_controller.dart';
 import 'app/library_controller.dart';
 import 'data/library_repository.dart';
+import 'services/library_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,7 @@ Future<void> main() async {
     await AppFolders.dbDir();
     await AppFolders.artworkDir();
     await AppFolders.cacheDir();
+    await AppFolders.metaDir();
   }
 
   final settings = SettingsController();
@@ -24,7 +26,8 @@ Future<void> main() async {
   final repository = LibraryRepository();
   await repository.init();
 
-  final library = LibraryController(repository: repository);
+  final store = await LibraryStore.init();
+  final library = LibraryController(repository: repository, store: store);
   await library.load();
 
   final playback = PlaybackController();

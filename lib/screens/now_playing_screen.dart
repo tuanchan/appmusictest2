@@ -25,6 +25,7 @@ class NowPlayingScreen extends StatelessWidget {
     final orange = AppTheme.soundCloudOrange;
     final playback = PlaybackScope.of(context);
     final library = LibraryScope.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AnimatedBuilder(
       animation: Listenable.merge([playback, library]),
@@ -40,12 +41,16 @@ class NowPlayingScreen extends StatelessWidget {
         );
         final t = track ?? playback.currentTrack ?? fallback;
         final liked = t.id.isNotEmpty && library.isLiked(t.id);
-        final progress = t.duration.inMilliseconds == 0
+        final playbackDuration = playback.duration.inMilliseconds == 0
+            ? t.duration
+            : playback.duration;
+        final progress = playbackDuration.inMilliseconds == 0
             ? 0.0
-            : (playback.position.inMilliseconds / t.duration.inMilliseconds)
+            : (playback.position.inMilliseconds /
+                    playbackDuration.inMilliseconds)
                 .clamp(0.0, 1.0);
 
-        final artworkPath = t.artworkPath;
+        final artworkPath = library.artworkPathForTrack(t);
         final hasArtwork = artworkPath != null && artworkPath.trim().isNotEmpty;
 
         return Scaffold(
@@ -119,12 +124,6 @@ class NowPlayingScreen extends StatelessWidget {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            image: hasArtwork && !kIsWeb
-                                ? DecorationImage(
-                                    image: FileImage(File(artworkPath!)),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
                             boxShadow: [
                               BoxShadow(
                                 blurRadius: 30,
@@ -133,8 +132,15 @@ class NowPlayingScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          child: hasArtwork
-                              ? null
+                          child: hasArtwork && !kIsWeb
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(28),
+                                  child: Image.file(
+                                    File(artworkPath!),
+                                    key: ValueKey(artworkPath),
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
                               : const Center(
                                   child: Icon(Icons.graphic_eq_rounded,
                                       size: 86, color: Colors.white),
@@ -183,8 +189,11 @@ class NowPlayingScreen extends StatelessWidget {
                               liked
                                   ? Icons.favorite_rounded
                                   : Icons.favorite_border_rounded,
-                              color:
-                                  liked ? orange : Colors.white.withOpacity(0.85),
+                              color: liked
+                                  ? orange
+                                  : (isDark
+                                      ? Colors.white54
+                                      : Colors.white.withOpacity(0.85)),
                             ),
                           ),
                         ],
@@ -197,6 +206,12 @@ class NowPlayingScreen extends StatelessWidget {
                         values: t.waveform,
                         height: 40,
                         progress: progress,
+                        onSeek: (p) => playback.seek(
+                          Duration(
+                            milliseconds:
+                                (playbackDuration.inMilliseconds * p).round(),
+                          ),
+                        ),
                       ),
                     ),
                     Padding(
@@ -207,7 +222,7 @@ class NowPlayingScreen extends StatelessWidget {
                           Text(_fmt(playback.position),
                               style: TextStyle(
                                   color: Colors.white.withOpacity(0.72))),
-                          Text(_fmt(t.duration),
+                          Text(_fmt(playbackDuration),
                               style: TextStyle(
                                   color: Colors.white.withOpacity(0.72))),
                         ],
@@ -227,9 +242,11 @@ class NowPlayingScreen extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 IconButton(
-                                  onPressed: () {},
+                                  onPressed: playback.toggleAutoplay,
                                   icon: const Icon(Icons.shuffle_rounded),
-                                  color: Colors.white.withOpacity(0.92),
+                                  color: playback.isAutoplay
+                                      ? orange
+                                      : Colors.white.withOpacity(0.92),
                                 ),
                                 IconButton(
                                   onPressed: playback.skipPrevious,
@@ -262,9 +279,11 @@ class NowPlayingScreen extends StatelessWidget {
                                   color: Colors.white.withOpacity(0.92),
                                 ),
                                 IconButton(
-                                  onPressed: () {},
+                                  onPressed: playback.toggleLoop,
                                   icon: const Icon(Icons.repeat_rounded),
-                                  color: Colors.white.withOpacity(0.92),
+                                  color: playback.isLoop
+                                      ? orange
+                                      : Colors.white.withOpacity(0.92),
                                 ),
                               ],
                             ),

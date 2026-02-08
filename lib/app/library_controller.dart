@@ -9,33 +9,69 @@ import 'package:just_audio/just_audio.dart';
 import '../data/library_repository.dart';
 import '../models/playlist.dart';
 import '../models/track.dart';
+import '../services/library_store.dart';
 import 'app_folders.dart';
 
 class LibraryController extends ChangeNotifier {
+  static const List<String> supportedAudioExtensions = [
+    'mp3',
+    'm4a',
+    'aac',
+    'wav',
+    'flac',
+    'ogg',
+    'opus',
+  ];
+
   final LibraryRepository repository;
+  final LibraryStore store;
   final AudioPlayer _probePlayer = AudioPlayer();
 
   List<Playlist> _playlists = const <Playlist>[];
   List<Track> _liked = const <Track>[];
   bool _loaded = false;
 
-  LibraryController({required this.repository});
+  LibraryController({
+    required this.repository,
+    required this.store,
+  });
 
   List<Playlist> get playlists => _playlists;
   List<Track> get likedTracks => _liked;
   bool get isLoaded => _loaded;
 
   Future<void> load() async {
-    _playlists = await repository.fetchPlaylists();
-    _liked = await repository.fetchLikedTracks();
+    await _loadData();
     _loaded = true;
     notifyListeners();
   }
 
   Future<void> refresh() async {
-    _playlists = await repository.fetchPlaylists();
-    _liked = await repository.fetchLikedTracks();
+    await _loadData();
     notifyListeners();
+  }
+
+  Future<void> _loadData() async {
+    final playlists = await repository.fetchPlaylists();
+    final liked = await repository.fetchLikedTracks();
+    final deletedTracks = store.deletedTrackIds;
+    final deletedPlaylists = store.deletedPlaylistIds;
+    final artworkMap = store.artworkMap;
+
+    _playlists = playlists
+        .where((p) => !deletedPlaylists.contains(p.id))
+        .map((playlist) {
+      final filteredTracks = playlist.tracks
+          .where((t) => !deletedTracks.contains(t.id))
+          .map((track) => _applyArtwork(track, artworkMap))
+          .toList();
+      return playlist.copyWith(tracks: filteredTracks);
+    }).toList();
+
+    _liked = liked
+        .where((t) => !deletedTracks.contains(t.id))
+        .map((track) => _applyArtwork(track, artworkMap))
+        .toList();
   }
 
   Track? getTrackById(String id) {
@@ -48,12 +84,24 @@ class LibraryController extends ChangeNotifier {
   }
 
   List<Track> recentTracks({int limit = 6}) {
-    final all = _playlists.expand((p) => p.tracks).toList();
-    return all.take(limit).toList();
+    final seen = <String>{};
+    final all = _playlists.expand((p) => p.tracks);
+    final unique = <Track>[];
+    for (final track in all) {
+      if (seen.contains(track.id)) continue;
+      seen.add(track.id);
+      unique.add(track);
+      if (unique.length >= limit) break;
+    }
+    return unique;
   }
 
   bool isLiked(String trackId) {
     return _liked.any((t) => t.id == trackId);
+  }
+
+  String? artworkPathForTrack(Track track) {
+    return store.artworkMap[track.id] ?? track.artworkPath;
   }
 
   Future<void> toggleLike(String trackId) async {
@@ -95,7 +143,7 @@ class LibraryController extends ChangeNotifier {
 
   Future<void> showImportOptions(BuildContext context) async {
     if (kIsWeb) {
-      _showMessage(context, 'Web không hỗ trợ import mp3.');
+      _showMessage(context, 'Web không hỗ trợ import file audio.');
       return;
     }
 
@@ -108,7 +156,7 @@ class LibraryController extends ChangeNotifier {
             children: [
               ListTile(
                 leading: const Icon(Icons.library_music_rounded),
-                title: const Text('Chọn file mp3'),
+                title: const Text('Chọn file audio'),
                 onTap: () async {
                   Navigator.of(context).pop();
                   await importFromFiles(context);
@@ -131,28 +179,40 @@ class LibraryController extends ChangeNotifier {
 
   Future<void> importFromFiles(BuildContext context) async {
     if (kIsWeb) {
-      _showMessage(context, 'Web không hỗ trợ import mp3.');
+      _showMessage(context, 'Web không hỗ trợ import file audio.');
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      type: FileType.custom,
-      allowedExtensions: const ['mp3'],
-    );
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.audio,
+      );
+    } catch (_) {
+      result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.custom,
+        allowedExtensions: supportedAudioExtensions,
+      );
+    }
+
     if (result == null) return;
 
     final paths = result.paths.whereType<String>().toList();
     if (paths.isEmpty) return;
 
     final playlist = await _getOrCreatePlaylist('Downloads');
-    await _importPaths(paths, playlistId: playlist.id);
+    final invalid = await _importPaths(paths, playlistId: playlist.id);
+    if (invalid.isNotEmpty) {
+      _showInvalidFormatMessage(context);
+    }
     await refresh();
   }
 
   Future<void> importFromFolder(BuildContext context) async {
     if (kIsWeb) {
-      _showMessage(context, 'Web không hỗ trợ import mp3.');
+      _showMessage(context, 'Web không hỗ trợ import file audio.');
       return;
     }
 
@@ -164,7 +224,7 @@ class LibraryController extends ChangeNotifier {
 
     await for (final entity in root.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
-      if (p.extension(entity.path).toLowerCase() != '.mp3') continue;
+      if (!_isSupportedExtension(entity.path)) continue;
       final folder = p.dirname(entity.path);
       folderMap.putIfAbsent(folder, () => <String>[]).add(entity.path);
     }
@@ -173,37 +233,46 @@ class LibraryController extends ChangeNotifier {
       final folderName = p.basename(entry.key);
       if (folderName.trim().isEmpty) continue;
       final playlist = await _getOrCreatePlaylist(folderName);
-      await _importPaths(entry.value, playlistId: playlist.id);
+      final invalid = await _importPaths(entry.value, playlistId: playlist.id);
+      if (invalid.isNotEmpty) {
+        _showInvalidFormatMessage(context);
+      }
     }
 
     await refresh();
   }
 
-  Future<void> setArtwork(BuildContext context, Track track) async {
+  Future<String?> setArtwork(BuildContext context, Track track) async {
     if (kIsWeb) {
       _showMessage(context, 'Web không hỗ trợ chọn ảnh.');
-      return;
+      return null;
     }
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
     );
-    if (result == null) return;
+    if (result == null) return null;
 
     final path = result.files.single.path;
-    if (path == null || path.isEmpty) return;
+    if (path == null || path.isEmpty) return null;
 
     final artworks = await AppFolders.artworkDir();
-    if (artworks == null) return;
+    if (artworks == null) return null;
 
-    final destPath = p.join(artworks.path, '${track.id}.jpg');
+    final ext = p.extension(path).isEmpty ? '.jpg' : p.extension(path);
+    final destPath = p.join(
+      artworks.path,
+      '${track.id}_${DateTime.now().millisecondsSinceEpoch}$ext',
+    );
     await File(path).copy(destPath);
+    await store.setArtworkPath(track.id, destPath);
     await repository.setArtworkPath(track.id, destPath);
     await refresh();
+    return destPath;
   }
 
   Future<void> clearArtwork(Track track) async {
-    final artworkPath = track.artworkPath;
+    final artworkPath = artworkPathForTrack(track);
     if (!kIsWeb && artworkPath != null && artworkPath.isNotEmpty) {
       try {
         final file = File(artworkPath);
@@ -214,23 +283,66 @@ class LibraryController extends ChangeNotifier {
         // ignore
       }
     }
+    await store.setArtworkPath(track.id, null);
     await repository.setArtworkPath(track.id, null);
     await refresh();
+  }
+
+  Future<bool> deleteTrackFromApp(BuildContext context, Track track) async {
+    final ok = await _confirmDelete(
+      context,
+      title: 'Xóa khỏi app',
+      message: 'Bạn muốn xóa bài này khỏi app? File gốc sẽ không bị xóa.',
+      confirmText: 'Xóa',
+    );
+    if (!ok) return false;
+    await store.setDeletedTrack(track.id, true);
+    await refresh();
+    return true;
+  }
+
+  Future<bool> deletePlaylistFromApp(BuildContext context, Playlist playlist) async {
+    final ok = await _confirmDelete(
+      context,
+      title: 'Xóa playlist',
+      message: 'Bạn muốn xóa playlist này khỏi app? File gốc sẽ không bị xóa.',
+      confirmText: 'Xóa',
+    );
+    if (!ok) return false;
+    await store.setDeletedPlaylist(playlist.id, true);
+    await refresh();
+    return true;
+  }
+
+  Future<void> restoreTrack(String trackId) async {
+    await store.setDeletedTrack(trackId, false);
   }
 
   Future<void> disposeController() async {
     await _probePlayer.dispose();
   }
 
-  Future<void> _importPaths(
+  Future<List<String>> _importPaths(
     List<String> paths, {
     required String playlistId,
   }) async {
+    final invalid = <String>[];
+
     for (final path in paths) {
       if (path.trim().isEmpty) continue;
+      if (!_isSupportedExtension(path)) {
+        invalid.add(path);
+        continue;
+      }
+
+      final duration = await _readDuration(path);
+      if (duration == null) {
+        invalid.add(path);
+        continue;
+      }
+
       final id = _idFromText(path);
       final title = p.basenameWithoutExtension(path);
-      final duration = await _readDuration(path);
       final track = Track(
         id: id,
         title: title,
@@ -243,20 +355,25 @@ class LibraryController extends ChangeNotifier {
         liked: false,
       );
 
-      await repository.upsertTrack(track);
-      await repository.addTrackToPlaylist(playlistId, track.id);
+      await restoreTrack(track.id);
+      try {
+        await repository.upsertTrack(track);
+        await repository.addTrackToPlaylist(playlistId, track.id);
+      } catch (_) {
+        invalid.add(path);
+      }
     }
+
+    return invalid;
   }
 
-  Future<Duration> _readDuration(String path) async {
+  Future<Duration?> _readDuration(String path) async {
     try {
       await _probePlayer.setFilePath(path);
-      final duration = _probePlayer.duration;
-      if (duration != null) return duration;
+      return _probePlayer.duration ?? Duration.zero;
     } catch (_) {
-      // ignore
+      return null;
     }
-    return Duration.zero;
   }
 
   Future<Playlist> _getOrCreatePlaylist(String name) async {
@@ -327,9 +444,49 @@ class LibraryController extends ChangeNotifier {
     );
   }
 
+  Future<bool> _confirmDelete(
+    BuildContext context, {
+    required String title,
+    required String message,
+    required String confirmText,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Hủy'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(confirmText),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
   void _showMessage(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showInvalidFormatMessage(BuildContext context) {
+    _showMessage(
+      context,
+      'Định dạng không phù hợp. Hỗ trợ: ${supportedAudioExtensions.join(', ')}',
+    );
+  }
+
+  bool _isSupportedExtension(String path) {
+    final ext = p.extension(path).replaceFirst('.', '').toLowerCase();
+    return supportedAudioExtensions.contains(ext);
   }
 
   String _idFromText(String input) {
@@ -354,5 +511,11 @@ class LibraryController extends ChangeNotifier {
       out.add((v * 0.85 + 0.15).clamp(0.12, 1.0));
     }
     return out;
+  }
+
+  Track _applyArtwork(Track track, Map<String, String> artworkMap) {
+    final path = artworkMap[track.id];
+    if (path == null || path.trim().isEmpty) return track;
+    return track.copyWith(artworkPath: path);
   }
 }

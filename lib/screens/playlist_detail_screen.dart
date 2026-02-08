@@ -40,16 +40,29 @@ class PlaylistDetailScreen extends StatelessWidget {
                   child: Text('Playlist trống.'),
                 ),
               for (final t in updated.tracks)
-                TrackTile(
-                  track: t,
-                  onTap: () {
-                    playback.playTrack(t, queue: updated.tracks);
-                    Navigator.of(context).pushNamed(
-                      AppRoutes.nowPlaying,
-                      arguments: t,
-                    );
-                  },
-                  onMore: () => showTrackOptions(context, t),
+                Dismissible(
+                  key: ValueKey('track-${updated.id}-${t.id}'),
+                  direction: DismissDirection.endToStart,
+                  confirmDismiss: (_) =>
+                      library.deleteTrackFromApp(context, t),
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    color: Colors.red.withOpacity(0.12),
+                    child: const Icon(Icons.delete_outline_rounded,
+                        color: Colors.redAccent),
+                  ),
+                  child: TrackTile(
+                    track: t,
+                    onTap: () {
+                      playback.playTrack(t, queue: updated.tracks);
+                      Navigator.of(context).pushNamed(
+                        AppRoutes.nowPlaying,
+                        arguments: t,
+                      );
+                    },
+                    onMore: () => showTrackOptions(context, t),
+                  ),
                 ),
             ],
           ),

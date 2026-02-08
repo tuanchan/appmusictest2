@@ -32,7 +32,11 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }).toList();
 
     _playlist = ConcatenatingAudioSource(children: sources);
-    await _player.setAudioSource(_playlist!);
+    try {
+      await _player.setAudioSource(_playlist!);
+    } catch (_) {
+      await _player.stop();
+    }
   }
 
   @override

@@ -39,4 +39,12 @@ class AppFolders {
     if (!await d.exists()) await d.create(recursive: true);
     return d;
   }
+
+  static Future<Directory?> metaDir() async {
+    final r = await root();
+    if (r == null) return null;
+    final d = Directory('${r.path}/meta');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
 }

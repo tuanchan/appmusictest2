@@ -43,11 +43,24 @@ class LibraryScreen extends StatelessWidget {
                   child: Text('Chưa có playlist. Hãy import mp3 để tạo.'),
                 ),
               for (final p in playlists)
-                PlaylistCard(
-                  playlist: p,
-                  onTap: () => Navigator.of(context).pushNamed(
-                    AppRoutes.playlistDetail,
-                    arguments: p,
+                Dismissible(
+                  key: ValueKey('playlist-${p.id}'),
+                  direction: DismissDirection.endToStart,
+                  confirmDismiss: (_) =>
+                      library.deletePlaylistFromApp(context, p),
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    color: Colors.red.withOpacity(0.12),
+                    child: const Icon(Icons.delete_outline_rounded,
+                        color: Colors.redAccent),
+                  ),
+                  child: PlaylistCard(
+                    playlist: p,
+                    onTap: () => Navigator.of(context).pushNamed(
+                      AppRoutes.playlistDetail,
+                      arguments: p,
+                    ),
                   ),
                 ),
               const SizedBox(height: 8),

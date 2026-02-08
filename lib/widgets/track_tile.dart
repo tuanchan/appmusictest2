@@ -30,8 +30,9 @@ class TrackTile extends StatelessWidget {
     final bg = Color(track.artworkColorArgb);
     final orange = AppTheme.soundCloudOrange;
     final library = LibraryScope.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final liked = library.isLiked(track.id);
-    final artworkPath = track.artworkPath;
+    final artworkPath = library.artworkPathForTrack(track);
     final hasArtwork = artworkPath != null && artworkPath.trim().isNotEmpty;
 
     return InkWell(
@@ -48,15 +49,16 @@ class TrackTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(14),
-                image: hasArtwork && !kIsWeb
-                    ? DecorationImage(
-                        image: FileImage(File(artworkPath!)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
               ),
-              child: hasArtwork
-                  ? null
+              child: hasArtwork && !kIsWeb
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(
+                        File(artworkPath!),
+                        key: ValueKey(artworkPath),
+                        fit: BoxFit.cover,
+                      ),
+                    )
                   : Icon(
                       Icons.graphic_eq_rounded,
                       color: Colors.white.withOpacity(0.95),
@@ -117,7 +119,9 @@ class TrackTile extends StatelessWidget {
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
                             size: 18,
-                            color: liked ? orange : Colors.black26,
+                            color: liked
+                                ? orange
+                                : (isDark ? Colors.white54 : Colors.black26),
                           ),
                         ),
                       ),

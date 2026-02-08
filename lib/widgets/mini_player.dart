@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import '../models/track.dart';
+import '../app/library_scope.dart';
 
 class MiniPlayer extends StatelessWidget {
   final Track track;
@@ -28,6 +29,7 @@ class MiniPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final orange = AppTheme.soundCloudOrange;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final library = LibraryScope.of(context);
 
     final bg = isDark
         ? const Color(0xFF111827).withOpacity(0.78)
@@ -36,7 +38,7 @@ class MiniPlayer extends StatelessWidget {
     final titleColor = isDark ? Colors.white : Colors.black;
     final subColor = isDark ? Colors.white70 : Colors.black54;
 
-    final artworkPath = track.artworkPath;
+    final artworkPath = library.artworkPathForTrack(track);
     final hasArtwork = artworkPath != null && artworkPath.trim().isNotEmpty;
 
     return Padding(
@@ -59,15 +61,16 @@ class MiniPlayer extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: orange,
                         borderRadius: BorderRadius.circular(14),
-                        image: hasArtwork && !kIsWeb
-                            ? DecorationImage(
-                                image: FileImage(File(artworkPath!)),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
                       ),
-                      child: hasArtwork
-                          ? null
+                      child: hasArtwork && !kIsWeb
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Image.file(
+                                File(artworkPath!),
+                                key: ValueKey(artworkPath),
+                                fit: BoxFit.cover,
+                              ),
+                            )
                           : const Icon(Icons.graphic_eq_rounded,
                               color: Colors.white),
                     ),

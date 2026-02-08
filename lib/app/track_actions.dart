@@ -2,9 +2,13 @@
 import 'package:flutter/material.dart';
 import '../models/track.dart';
 import 'library_scope.dart';
+import 'playback_scope.dart';
 
 Future<void> showTrackOptions(BuildContext context, Track track) async {
   final library = LibraryScope.of(context);
+  final playback = PlaybackScope.of(context);
+
+  final artworkPath = library.artworkPathForTrack(track);
 
   await showModalBottomSheet<void>(
     context: context,
@@ -26,18 +30,30 @@ Future<void> showTrackOptions(BuildContext context, Track track) async {
               title: const Text('Chọn ảnh'),
               onTap: () async {
                 Navigator.of(context).pop();
-                await library.setArtwork(context, track);
+                final path = await library.setArtwork(context, track);
+                if (path != null) {
+                  await playback.updateArtwork(track.id, path);
+                }
               },
             ),
-            if (track.artworkPath != null && track.artworkPath!.isNotEmpty)
+            if (artworkPath != null && artworkPath.isNotEmpty)
               ListTile(
                 leading: const Icon(Icons.delete_outline_rounded),
                 title: const Text('Xóa ảnh'),
                 onTap: () async {
                   Navigator.of(context).pop();
                   await library.clearArtwork(track);
+                  await playback.updateArtwork(track.id, null);
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.remove_circle_outline_rounded),
+              title: const Text('Xóa khỏi app'),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await library.deleteTrackFromApp(context, track);
+              },
+            ),
           ],
         ),
       );
