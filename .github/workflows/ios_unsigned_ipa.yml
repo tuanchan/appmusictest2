@@ -1,0 +1,70 @@
+name: iOS Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Show Flutter & Xcode versions
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      # Build iOS app without codesign
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      # Try Flutter build ipa (may or may not output ipa depending on toolchain)
+      - name: Build IPA (no codesign)
+        run: |
+          set -e
+          flutter build ipa --release --no-codesign || true
+
+      # If IPA not produced, package Runner.app into a valid unsigned .ipa (Payload/Runner.app)
+      - name: Package unsigned IPA manually (fallback)
+        run: |
+          set -e
+          IPA_DIR="build/ios/ipa"
+          mkdir -p "$IPA_DIR"
+
+          # Find Runner.app (Release)
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app not found at $APP_PATH"
+            ls -la build/ios || true
+            ls -la build/ios/iphoneos || true
+            exit 1
+          fi
+
+          WORK_DIR="$(pwd)/_ipa_tmp"
+          rm -rf "$WORK_DIR"
+          mkdir -p "$WORK_DIR/Payload"
+          cp -R "$APP_PATH" "$WORK_DIR/Payload/Runner.app"
+
+          (cd "$WORK_DIR" && /usr/bin/zip -qry "../$IPA_DIR/AppMusicVol2-unsigned.ipa" Payload)
+
+          echo "IPA created at $IPA_DIR/AppMusicVol2-unsigned.ipa"
+          ls -la "$IPA_DIR"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppMusicVol2-unsigned-ipa
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
