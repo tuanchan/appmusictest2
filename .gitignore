@@ -1,0 +1,22 @@
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# iOS generated
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Flutter web chrome device cache (tuyệt đối không commit)
+.dart_tool/chrome-device/
+
+.vscode/templates
+ios/Pods/
+ios/Podfile.lock
