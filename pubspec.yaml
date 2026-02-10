@@ -1,0 +1,40 @@
+name: music_player
+description: A beautiful music player for iPhone with SoundCloud-inspired design
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Audio playback
+  just_audio: ^0.9.36
+  audio_session: ^0.1.18
+  
+  # File handling
+  file_picker: ^6.1.1
+  image_picker: ^1.0.7
+  path_provider: ^2.1.2
+  
+  # Metadata extraction
+  audiotagger: ^2.2.1
+  
+  # Data persistence
+  shared_preferences: ^2.2.2
+  
+  # Permissions
+  permission_handler: ^11.2.0
+  
+  # Utils
+  uuid: ^4.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
